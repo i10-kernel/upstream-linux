@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * The i10 I/O scheduler - supports batching at blk-mq.
- * 
+ *
  * An early version of the idea is described and evaluated in
  * "TCP ≈ RDMA: CPU-efficient Remote Storage Access with i10",
  * USENIX NSDI 2020.
@@ -10,7 +10,7 @@
  *	Jaehyun Hwang <jaehyun.hwang@cornell.edu>
  *	Qizhe Cai <qc228@cornell.edu>
  *	Ao Tang <atang@cornell.edu>
- *	Rachit Agarwal <ragarwal@cornell.edu>	
+ *	Rachit Agarwal <ragarwal@cornell.edu>
  */
 
 #include <linux/kernel.h>
@@ -29,7 +29,7 @@
 /* Default batch size in number of requests */
 #define I10_BATCH_NR		16
 /* Default batch size in bytes (for write requests) */
-#define	I10_BATCH_BYTES		65536
+#define I10_BATCH_BYTES		65536
 /* Default timeout value for delayed doorbell (us units) */
 #define I10_BATCH_TIMEOUT	50
 
@@ -114,6 +114,7 @@ static int i10_init_sched(struct request_queue *q, struct elevator_type *e)
 static void i10_exit_sched(struct elevator_queue *e)
 {
 	struct i10_queue_data *qdata = e->elevator_data;
+
 	kfree(qdata);
 }
 
@@ -265,7 +266,7 @@ static struct request *i10_hctx_dispatch_request(struct blk_mq_hw_ctx *hctx)
 	rq = list_first_entry_or_null(&queue->rq_list,
 				struct request, queuelist);
 	if (rq)
-	 	list_del_init(&rq->queuelist);
+		list_del_init(&rq->queuelist);
 	else
 		i10_hctx_queue_reset(queue);
 	spin_unlock(&queue->lock);

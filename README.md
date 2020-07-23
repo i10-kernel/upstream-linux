@@ -1,7 +1,7 @@
 # i10 I/O scheduler for the upstream Linux kernel.
 
 ## Prerequisites
-Download the recent 'linux-block' source tree that includes [Ming's patch-set](https://www.spinics.net/lists/linux-block/msg55860.html) and NVMe-TCP optimizations[[1](http://git.infradead.org/nvme.git/commit/122e5b9f3d370ae11e1502d14ff5c7ea9b144a76)][[2](http://git.infradead.org/nvme.git/commit/86f0348ace1510d7ac25124b096fb88a6ab45270)][[3](http://git.infradead.org/nvme.git/commit/15ec928a65e0528ef4999e2947b4802b772f0891)].
+Download the recent 'linux-block' source tree that includes [batching-dispatch](https://www.spinics.net/lists/linux-block/msg55860.html) and nvme-tcp optimizations[[1](http://git.infradead.org/nvme.git/commit/122e5b9f3d370ae11e1502d14ff5c7ea9b144a76)][[2](http://git.infradead.org/nvme.git/commit/86f0348ace1510d7ac25124b096fb88a6ab45270)][[3](http://git.infradead.org/nvme.git/commit/15ec928a65e0528ef4999e2947b4802b772f0891)].
 
 ```
 git clone -b for-5.9/drivers https://git.kernel.org/pub/scm/linux/kernel/git/axboe/linux-block.git

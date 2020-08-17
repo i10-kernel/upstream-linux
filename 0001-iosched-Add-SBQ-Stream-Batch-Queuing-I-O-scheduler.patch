@@ -1,6 +1,6 @@
-From c4d85a988f45b1c7497db9f94056dccb1a4cc340 Mon Sep 17 00:00:00 2001
+From 36d5e17d16b94981f8342515b4f8df55c97ad837 Mon Sep 17 00:00:00 2001
 From: Jaehyun Hwang <jaehyun.hwang@cornell.edu>
-Date: Mon, 17 Aug 2020 01:38:19 -0400
+Date: Mon, 17 Aug 2020 09:41:33 -0400
 Subject: [PATCH] iosched: Add SBQ (Stream Batch Queuing) I/O scheduler
 
 Hi All,
@@ -38,20 +38,20 @@ References
 
 Signed-off-by: Jaehyun Hwang <jaehyun.hwang@cornell.edu>
 ---
- Documentation/block/sbq-iosched.rst |  19 ++
+ Documentation/block/sbq-iosched.rst |  22 ++
  block/Kconfig.iosched               |   8 +
  block/Makefile                      |   1 +
  block/sbq-iosched.c                 | 421 ++++++++++++++++++++++++++++
- 4 files changed, 449 insertions(+)
+ 4 files changed, 452 insertions(+)
  create mode 100644 Documentation/block/sbq-iosched.rst
  create mode 100644 block/sbq-iosched.c
 
 diff --git a/Documentation/block/sbq-iosched.rst b/Documentation/block/sbq-iosched.rst
 new file mode 100644
-index 000000000000..7692ba985811
+index 000000000000..36af28f74a40
 --- /dev/null
 +++ b/Documentation/block/sbq-iosched.rst
-@@ -0,0 +1,19 @@
+@@ -0,0 +1,22 @@
 +==========================
 +SBQ I/O scheduler tunables
 +==========================
@@ -62,15 +62,18 @@ index 000000000000..7692ba985811
 +
 +batch_nr
 +--------
-+Target number of requests for batching read/write requests
++Number of requests for batching read/write requests
++Default: 16
 +
 +batch_bytes
 +-----------
-+Target number of bytes for batching write requests
++Number of bytes for batching write requests
++Default: 65536 (bytes)
 +
 +batch_timeout
 +-------------
-+Target timeout value for batching (in microseconds)
++Timeout value for batching (in microseconds)
++Default: 50 (us)
 diff --git a/block/Kconfig.iosched b/block/Kconfig.iosched
 index 2f2158e05a91..335816480eeb 100644
 --- a/block/Kconfig.iosched

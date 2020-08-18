@@ -1,7 +1,7 @@
-From 36d5e17d16b94981f8342515b4f8df55c97ad837 Mon Sep 17 00:00:00 2001
+From 0b8cb3ed637e1f427d5c67312710abb0b8a23f2a Mon Sep 17 00:00:00 2001
 From: Jaehyun Hwang <jaehyun.hwang@cornell.edu>
-Date: Mon, 17 Aug 2020 09:41:33 -0400
-Subject: [PATCH] iosched: Add SBQ (Stream Batch Queuing) I/O scheduler
+Date: Mon, 17 Aug 2020 22:13:11 -0400
+Subject: [PATCH] iosched: Add Disaggregated Storage I/O Scheduler (DSS)
 
 Hi All,
 
@@ -10,15 +10,15 @@ such as mmc [1] and nvme-tcp [2,3]. Meanwhile, batching dispatch has been also s
 for I/O schedulers [4]. Thus the only remaining building block for realizing batching
 is an I/O scheduler that enables these enhancements.
 
-This patch introduces a new I/O scheduler, SBQ (Stream Batch Queuing), which
+This patch introduces a new I/O scheduler, DSS (Disaggregated Storage Scheduler), which
 performs batching per hctx in terms of #requests, #bytes, and timeouts (at microseconds
-granularity). SBQ starts dispatching only when #requests or #bytes is larger than
+granularity). DSS starts dispatching only when #requests or #bytes is larger than
 a default threshold or when a timer expires. After that, batching dispatch [3] would
 happen, allowing batching at device drivers along with "bd->last" and ".commit_rqs".
 
-We have tested the SBQ I/O scheduler with nvme-tcp optimizaitons [2,3] and batching
+We have tested the DSS I/O scheduler with nvme-tcp optimizaitons [2,3] and batching
 dispatch [4], varying number of cores, varying read/write ratios, and varying request
-sizes, with NVMe SSD and RAM block device. SBQ shows ~1.6X improvements over "noop"
+sizes, with NVMe SSD and RAM block device. DSS shows ~1.6X improvements over "noop"
 I/O scheduler in terms of IOPS with NVMe SSD. All results are available at [5].
 (An early version of the idea is evaluated in [6].)
 
@@ -33,32 +33,32 @@ References
 [2] https://git.infradead.org/nvme.git/commit/122e5b9f3d370ae11e1502d14ff5c7ea9b144a76
 [3] https://git.infradead.org/nvme.git/commit/86f0348ace1510d7ac25124b096fb88a6ab45270
 [4] https://lore.kernel.org/linux-block/20200630102501.2238972-1-ming.lei@redhat.com/
-[5] https://github.com/i10-kernel/upstream-linux/blob/master/sbq-evaluation.pdf
+[5] https://github.com/i10-kernel/upstream-linux/blob/master/dss-evaluation.pdf
 [6] https://www.usenix.org/conference/nsdi20/presentation/hwang
 
 Signed-off-by: Jaehyun Hwang <jaehyun.hwang@cornell.edu>
 ---
- Documentation/block/sbq-iosched.rst |  22 ++
+ Documentation/block/dss-iosched.rst |  22 ++
  block/Kconfig.iosched               |   8 +
  block/Makefile                      |   1 +
- block/sbq-iosched.c                 | 421 ++++++++++++++++++++++++++++
+ block/dss-iosched.c                 | 421 ++++++++++++++++++++++++++++
  4 files changed, 452 insertions(+)
- create mode 100644 Documentation/block/sbq-iosched.rst
- create mode 100644 block/sbq-iosched.c
+ create mode 100644 Documentation/block/dss-iosched.rst
+ create mode 100644 block/dss-iosched.c
 
-diff --git a/Documentation/block/sbq-iosched.rst b/Documentation/block/sbq-iosched.rst
+diff --git a/Documentation/block/dss-iosched.rst b/Documentation/block/dss-iosched.rst
 new file mode 100644
-index 000000000000..36af28f74a40
+index 000000000000..519920d00098
 --- /dev/null
-+++ b/Documentation/block/sbq-iosched.rst
++++ b/Documentation/block/dss-iosched.rst
 @@ -0,0 +1,22 @@
 +==========================
-+SBQ I/O scheduler tunables
++DSS I/O scheduler tunables
 +==========================
 +
-+The three tunables for the SBQ scheduler are the number of requests for 
++The three tunables for the DSS scheduler are the number of requests for
 +reads/writes, the number of bytes for writes, and a timeout value.
-+SBQ will use these values for batching requests.
++DSS will use these values for batching requests.
 +
 +batch_nr
 +--------
@@ -75,18 +75,18 @@ index 000000000000..36af28f74a40
 +Timeout value for batching (in microseconds)
 +Default: 50 (us)
 diff --git a/block/Kconfig.iosched b/block/Kconfig.iosched
-index 2f2158e05a91..335816480eeb 100644
+index 2f2158e05a91..6ccb76bae9bc 100644
 --- a/block/Kconfig.iosched
 +++ b/block/Kconfig.iosched
 @@ -44,6 +44,14 @@ config BFQ_CGROUP_DEBUG
  	Enable some debugging help. Currently it exports additional stat
  	files in a cgroup which can be useful for debugging.
  
-+config MQ_IOSCHED_SBQ
-+        tristate "SBQ I/O scheduler"
++config MQ_IOSCHED_DSS
++        tristate "DSS I/O scheduler"
 +        default y
 +        help
-+          The SBQ (Stream Batch Queuing) I/O scheduler supports batching
++          The Disaggregated Storage I/O Scheduler (DSS) supports batching
 +          at BLK-MQ. Any device driver that benefits from batching
 +          (e.g., NVMe-over-TCP) can use this scheduler.
 +
@@ -94,26 +94,26 @@ index 2f2158e05a91..335816480eeb 100644
  
  endif
 diff --git a/block/Makefile b/block/Makefile
-index 8d841f5f986f..368ea856f419 100644
+index 8d841f5f986f..eae108f2d2ab 100644
 --- a/block/Makefile
 +++ b/block/Makefile
 @@ -21,6 +21,7 @@ obj-$(CONFIG_BLK_CGROUP_IOLATENCY)	+= blk-iolatency.o
  obj-$(CONFIG_BLK_CGROUP_IOCOST)	+= blk-iocost.o
  obj-$(CONFIG_MQ_IOSCHED_DEADLINE)	+= mq-deadline.o
  obj-$(CONFIG_MQ_IOSCHED_KYBER)	+= kyber-iosched.o
-+obj-$(CONFIG_MQ_IOSCHED_SBQ)    += sbq-iosched.o
++obj-$(CONFIG_MQ_IOSCHED_DSS)    += dss-iosched.o
  bfq-y				:= bfq-iosched.o bfq-wf2q.o bfq-cgroup.o
  obj-$(CONFIG_IOSCHED_BFQ)	+= bfq.o
  
-diff --git a/block/sbq-iosched.c b/block/sbq-iosched.c
+diff --git a/block/dss-iosched.c b/block/dss-iosched.c
 new file mode 100644
-index 000000000000..44d5771241bd
+index 000000000000..1c02dc6ffdf7
 --- /dev/null
-+++ b/block/sbq-iosched.c
++++ b/block/dss-iosched.c
 @@ -0,0 +1,421 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
-+ * The SBQ (Stream Batch Queuing) I/O scheduler - supports batching
++ * The Disaggregated Storage I/O Scheduler (DSS) - supports batching
 + *      at blk-mq. The main use case is NVMe-over-TCP device driver.
 + *
 + * An early version of the idea is described and evaluated in
@@ -141,27 +141,27 @@ index 000000000000..44d5771241bd
 +#include "blk-mq-tag.h"
 +
 +/* Default batch size in number of requests */
-+#define SBQ_BATCH_NR		16
++#define DSS_BATCH_NR		16
 +/* Default batch size in bytes (for write requests) */
-+#define SBQ_BATCH_BYTES		65536
++#define DSS_BATCH_BYTES		65536
 +/* Default timeout value for batching (us units) */
-+#define SBQ_BATCH_TIMEOUT	50
++#define DSS_BATCH_TIMEOUT	50
 +
-+enum sbq_state {
++enum dss_state {
 +	/* Batching state:
 +	 * Do not run dispatching until we have
 +	 * a certain amount of requests or a timer expires.
 +	 */
-+	SBQ_STATE_BATCH = 0,
++	DSS_STATE_BATCH = 0,
 +
 +	/* Dispatching state:
 +	 * Run dispatching until all requests in the
 +	 * scheduler's hctx queue are dispatched.
 +	 */
-+	SBQ_STATE_DISPATCH,
++	DSS_STATE_DISPATCH,
 +};
 +
-+struct sbq_queue_data {
++struct dss_queue_data {
 +	struct request_queue *q;
 +
 +	unsigned int	def_batch_nr;
@@ -169,7 +169,7 @@ index 000000000000..44d5771241bd
 +	unsigned int	def_batch_timeout;
 +};
 +
-+struct sbq_hctx_queue {
++struct dss_hctx_queue {
 +	spinlock_t	lock;
 +	struct		list_head rq_list;
 +
@@ -182,36 +182,36 @@ index 000000000000..44d5771241bd
 +	unsigned int	qlen_nr;
 +	unsigned int	qlen_bytes;
 +
-+	struct hrtimer	sbq_timer;
-+	enum sbq_state	state;
++	struct hrtimer	dss_timer;
++	enum dss_state	state;
 +};
 +
-+static struct sbq_queue_data *sbq_queue_data_alloc(struct request_queue *q)
++static struct dss_queue_data *dss_queue_data_alloc(struct request_queue *q)
 +{
-+	struct sbq_queue_data *qdata;
++	struct dss_queue_data *qdata;
 +
 +	qdata = kzalloc_node(sizeof(*qdata), GFP_KERNEL, q->node);
 +	if (!qdata)
 +		return ERR_PTR(-ENOMEM);
 +
 +	qdata->q = q;
-+	qdata->def_batch_nr = SBQ_BATCH_NR;
-+	qdata->def_batch_bytes = SBQ_BATCH_BYTES;
-+	qdata->def_batch_timeout = SBQ_BATCH_TIMEOUT;
++	qdata->def_batch_nr = DSS_BATCH_NR;
++	qdata->def_batch_bytes = DSS_BATCH_BYTES;
++	qdata->def_batch_timeout = DSS_BATCH_TIMEOUT;
 +
 +	return qdata;
 +}
 +
-+static int sbq_init_sched(struct request_queue *q, struct elevator_type *e)
++static int dss_init_sched(struct request_queue *q, struct elevator_type *e)
 +{
-+	struct sbq_queue_data *qdata;
++	struct dss_queue_data *qdata;
 +	struct elevator_queue *eq;
 +
 +	eq = elevator_alloc(q, e);
 +	if (!eq)
 +		return -ENOMEM;
 +
-+	qdata = sbq_queue_data_alloc(q);
++	qdata = dss_queue_data_alloc(q);
 +	if (IS_ERR(qdata)) {
 +		kobject_put(&eq->kobj);
 +		return PTR_ERR(qdata);
@@ -225,35 +225,35 @@ index 000000000000..44d5771241bd
 +	return 0;
 +}
 +
-+static void sbq_exit_sched(struct elevator_queue *e)
++static void dss_exit_sched(struct elevator_queue *e)
 +{
-+	struct sbq_queue_data *qdata = e->elevator_data;
++	struct dss_queue_data *qdata = e->elevator_data;
 +
 +	kfree(qdata);
 +}
 +
-+enum hrtimer_restart sbq_hctx_timeout_handler(struct hrtimer *timer)
++enum hrtimer_restart dss_hctx_timeout_handler(struct hrtimer *timer)
 +{
-+	struct sbq_hctx_queue *queue =
-+		container_of(timer, struct sbq_hctx_queue,
-+			sbq_timer);
++	struct dss_hctx_queue *queue =
++		container_of(timer, struct dss_hctx_queue,
++			dss_timer);
 +
-+	queue->state = SBQ_STATE_DISPATCH;
++	queue->state = DSS_STATE_DISPATCH;
 +	blk_mq_run_hw_queue(queue->hctx, true);
 +
 +	return HRTIMER_NORESTART;
 +}
 +
-+static void sbq_hctx_queue_reset(struct sbq_hctx_queue *queue)
++static void dss_hctx_queue_reset(struct dss_hctx_queue *queue)
 +{
 +	queue->qlen_nr = 0;
 +	queue->qlen_bytes = 0;
-+	queue->state = SBQ_STATE_BATCH;
++	queue->state = DSS_STATE_BATCH;
 +}
 +
-+static int sbq_init_hctx(struct blk_mq_hw_ctx *hctx, unsigned int hctx_idx)
++static int dss_init_hctx(struct blk_mq_hw_ctx *hctx, unsigned int hctx_idx)
 +{
-+	struct sbq_hctx_queue *queue;
++	struct dss_hctx_queue *queue;
 +
 +	queue = kmalloc_node(sizeof(*queue), GFP_KERNEL, hctx->numa_node);
 +	if (!queue)
@@ -267,30 +267,30 @@ index 000000000000..44d5771241bd
 +	queue->batch_bytes = 0;
 +	queue->batch_timeout = 0;
 +
-+	hrtimer_init(&queue->sbq_timer,
++	hrtimer_init(&queue->dss_timer,
 +		CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-+	queue->sbq_timer.function = &sbq_hctx_timeout_handler;
++	queue->dss_timer.function = &dss_hctx_timeout_handler;
 +
-+	sbq_hctx_queue_reset(queue);
++	dss_hctx_queue_reset(queue);
 +
 +	hctx->sched_data = queue;
 +
 +	return 0;
 +}
 +
-+static void sbq_exit_hctx(struct blk_mq_hw_ctx *hctx, unsigned int hctx_idx)
++static void dss_exit_hctx(struct blk_mq_hw_ctx *hctx, unsigned int hctx_idx)
 +{
-+	struct sbq_hctx_queue *queue = hctx->sched_data;
++	struct dss_hctx_queue *queue = hctx->sched_data;
 +
-+	if (hrtimer_active(&queue->sbq_timer))
-+		hrtimer_cancel(&queue->sbq_timer);
++	if (hrtimer_active(&queue->dss_timer))
++		hrtimer_cancel(&queue->dss_timer);
 +	kfree(hctx->sched_data);
 +}
 +
-+static bool sbq_hctx_bio_merge(struct blk_mq_hw_ctx *hctx, struct bio *bio,
++static bool dss_hctx_bio_merge(struct blk_mq_hw_ctx *hctx, struct bio *bio,
 +		unsigned int nr_segs)
 +{
-+	struct sbq_hctx_queue *queue = hctx->sched_data;
++	struct dss_hctx_queue *queue = hctx->sched_data;
 +	struct list_head *rq_list = &queue->rq_list;
 +	bool merged;
 +
@@ -308,34 +308,34 @@ index 000000000000..44d5771241bd
 + * The batch size can be adjusted dynamically on a per-hctx basis. Use per-hctx
 + * variables in that case.
 + */
-+static inline unsigned int sbq_hctx_batch_nr(struct blk_mq_hw_ctx *hctx)
++static inline unsigned int dss_hctx_batch_nr(struct blk_mq_hw_ctx *hctx)
 +{
-+	struct sbq_queue_data *qdata = hctx->queue->elevator->elevator_data;
-+	struct sbq_hctx_queue *queue = hctx->sched_data;
++	struct dss_queue_data *qdata = hctx->queue->elevator->elevator_data;
++	struct dss_hctx_queue *queue = hctx->sched_data;
 +
 +	return queue->batch_nr ?
 +		queue->batch_nr : qdata->def_batch_nr;
 +}
 +
-+static inline unsigned int sbq_hctx_batch_bytes(struct blk_mq_hw_ctx *hctx)
++static inline unsigned int dss_hctx_batch_bytes(struct blk_mq_hw_ctx *hctx)
 +{
-+	struct sbq_queue_data *qdata = hctx->queue->elevator->elevator_data;
-+	struct sbq_hctx_queue *queue = hctx->sched_data;
++	struct dss_queue_data *qdata = hctx->queue->elevator->elevator_data;
++	struct dss_hctx_queue *queue = hctx->sched_data;
 +
 +	return queue->batch_bytes ?
 +		queue->batch_bytes : qdata->def_batch_bytes;
 +}
 +
-+static inline unsigned int sbq_hctx_batch_timeout(struct blk_mq_hw_ctx *hctx)
++static inline unsigned int dss_hctx_batch_timeout(struct blk_mq_hw_ctx *hctx)
 +{
-+	struct sbq_queue_data *qdata = hctx->queue->elevator->elevator_data;
-+	struct sbq_hctx_queue *queue = hctx->sched_data;
++	struct dss_queue_data *qdata = hctx->queue->elevator->elevator_data;
++	struct dss_hctx_queue *queue = hctx->sched_data;
 +
 +	return queue->batch_timeout ?
 +		queue->batch_timeout : qdata->def_batch_timeout;
 +}
 +
-+static void sbq_hctx_insert_update(struct sbq_hctx_queue *queue,
++static void dss_hctx_insert_update(struct dss_hctx_queue *queue,
 +				struct request *rq)
 +{
 +	if ((rq->cmd_flags & REQ_OP_MASK) == REQ_OP_WRITE)
@@ -343,10 +343,10 @@ index 000000000000..44d5771241bd
 +	queue->qlen_nr++;
 +}
 +
-+static void sbq_hctx_insert_requests(struct blk_mq_hw_ctx *hctx,
++static void dss_hctx_insert_requests(struct blk_mq_hw_ctx *hctx,
 +				struct list_head *rq_list, bool at_head)
 +{
-+	struct sbq_hctx_queue *queue = hctx->sched_data;
++	struct dss_hctx_queue *queue = hctx->sched_data;
 +	struct request *rq, *next;
 +
 +	list_for_each_entry_safe(rq, next, rq_list, queuelist) {
@@ -357,23 +357,23 @@ index 000000000000..44d5771241bd
 +			list_move(&rq->queuelist, head);
 +		else
 +			list_move_tail(&rq->queuelist, head);
-+		sbq_hctx_insert_update(queue, rq);
++		dss_hctx_insert_update(queue, rq);
 +		blk_mq_sched_request_inserted(rq);
 +		spin_unlock(&queue->lock);
 +	}
 +
 +	/* Start a new timer */
-+	if (queue->state == SBQ_STATE_BATCH &&
-+		!hrtimer_active(&queue->sbq_timer))
-+		hrtimer_start(&queue->sbq_timer,
-+			ns_to_ktime(sbq_hctx_batch_timeout(hctx)
++	if (queue->state == DSS_STATE_BATCH &&
++		!hrtimer_active(&queue->dss_timer))
++		hrtimer_start(&queue->dss_timer,
++			ns_to_ktime(dss_hctx_batch_timeout(hctx)
 +				* NSEC_PER_USEC),
 +			HRTIMER_MODE_REL);
 +}
 +
-+static struct request *sbq_hctx_dispatch_request(struct blk_mq_hw_ctx *hctx)
++static struct request *dss_hctx_dispatch_request(struct blk_mq_hw_ctx *hctx)
 +{
-+	struct sbq_hctx_queue *queue = hctx->sched_data;
++	struct dss_hctx_queue *queue = hctx->sched_data;
 +	struct request *rq;
 +
 +	spin_lock(&queue->lock);
@@ -382,51 +382,51 @@ index 000000000000..44d5771241bd
 +	if (rq)
 +		list_del_init(&rq->queuelist);
 +	else
-+		sbq_hctx_queue_reset(queue);
++		dss_hctx_queue_reset(queue);
 +	spin_unlock(&queue->lock);
 +
 +	return rq;
 +}
 +
-+static inline bool sbq_hctx_dispatch_now(struct blk_mq_hw_ctx *hctx)
++static inline bool dss_hctx_dispatch_now(struct blk_mq_hw_ctx *hctx)
 +{
-+	struct sbq_hctx_queue *queue = hctx->sched_data;
++	struct dss_hctx_queue *queue = hctx->sched_data;
 +
-+	return (queue->qlen_nr >= sbq_hctx_batch_nr(hctx)) ||
-+		(queue->qlen_bytes >= sbq_hctx_batch_bytes(hctx));
++	return (queue->qlen_nr >= dss_hctx_batch_nr(hctx)) ||
++		(queue->qlen_bytes >= dss_hctx_batch_bytes(hctx));
 +}
 +
 +/*
 + * Return true if we are in the dispatching state.
 + */
-+static bool sbq_hctx_has_work(struct blk_mq_hw_ctx *hctx)
++static bool dss_hctx_has_work(struct blk_mq_hw_ctx *hctx)
 +{
-+	struct sbq_hctx_queue *queue = hctx->sched_data;
++	struct dss_hctx_queue *queue = hctx->sched_data;
 +
-+	if (queue->state == SBQ_STATE_BATCH) {
-+		if (sbq_hctx_dispatch_now(hctx)) {
-+			queue->state = SBQ_STATE_DISPATCH;
-+			if (hrtimer_active(&queue->sbq_timer))
-+				hrtimer_cancel(&queue->sbq_timer);
++	if (queue->state == DSS_STATE_BATCH) {
++		if (dss_hctx_dispatch_now(hctx)) {
++			queue->state = DSS_STATE_DISPATCH;
++			if (hrtimer_active(&queue->dss_timer))
++				hrtimer_cancel(&queue->dss_timer);
 +		}
 +	}
 +
-+	return (queue->state == SBQ_STATE_DISPATCH);
++	return (queue->state == DSS_STATE_DISPATCH);
 +}
 +
-+#define SBQ_DEF_BATCH_SHOW_STORE(name)					\
-+static ssize_t sbq_def_batch_##name##_show(struct elevator_queue *e,	\
++#define DSS_DEF_BATCH_SHOW_STORE(name)					\
++static ssize_t dss_def_batch_##name##_show(struct elevator_queue *e,	\
 +				char *page)				\
 +{									\
-+	struct sbq_queue_data *qdata = e->elevator_data;		\
++	struct dss_queue_data *qdata = e->elevator_data;		\
 +									\
 +	return sprintf(page, "%u\n", qdata->def_batch_##name);		\
 +}									\
 +									\
-+static ssize_t sbq_def_batch_##name##_store(struct elevator_queue *e,	\
++static ssize_t dss_def_batch_##name##_store(struct elevator_queue *e,	\
 +			const char *page, size_t count)			\
 +{									\
-+	struct sbq_queue_data *qdata = e->elevator_data;		\
++	struct dss_queue_data *qdata = e->elevator_data;		\
 +	unsigned long long value;					\
 +	int ret;							\
 +									\
@@ -438,100 +438,100 @@ index 000000000000..44d5771241bd
 +									\
 +	return count;							\
 +}
-+SBQ_DEF_BATCH_SHOW_STORE(nr);
-+SBQ_DEF_BATCH_SHOW_STORE(bytes);
-+SBQ_DEF_BATCH_SHOW_STORE(timeout);
-+#undef SBQ_DEF_BATCH_SHOW_STORE
++DSS_DEF_BATCH_SHOW_STORE(nr);
++DSS_DEF_BATCH_SHOW_STORE(bytes);
++DSS_DEF_BATCH_SHOW_STORE(timeout);
++#undef DSS_DEF_BATCH_SHOW_STORE
 +
-+#define SBQ_SCHED_ATTR(name)	\
-+	__ATTR(batch_##name, 0644, sbq_def_batch_##name##_show, sbq_def_batch_##name##_store)
-+static struct elv_fs_entry sbq_sched_attrs[] = {
-+	SBQ_SCHED_ATTR(nr),
-+	SBQ_SCHED_ATTR(bytes),
-+	SBQ_SCHED_ATTR(timeout),
++#define DSS_SCHED_ATTR(name)	\
++	__ATTR(batch_##name, 0644, dss_def_batch_##name##_show, dss_def_batch_##name##_store)
++static struct elv_fs_entry dss_sched_attrs[] = {
++	DSS_SCHED_ATTR(nr),
++	DSS_SCHED_ATTR(bytes),
++	DSS_SCHED_ATTR(timeout),
 +	__ATTR_NULL
 +};
-+#undef SBQ_SCHED_ATTR
++#undef DSS_SCHED_ATTR
 +
 +#ifdef CONFIG_BLK_DEBUG_FS
-+#define SBQ_DEBUGFS_SHOW(name)	\
-+static int sbq_hctx_batch_##name##_show(void *data, struct seq_file *m)	\
++#define DSS_DEBUGFS_SHOW(name)	\
++static int dss_hctx_batch_##name##_show(void *data, struct seq_file *m)	\
 +{									\
 +	struct blk_mq_hw_ctx *hctx = data;				\
-+	struct sbq_hctx_queue *queue = hctx->sched_data;		\
++	struct dss_hctx_queue *queue = hctx->sched_data;		\
 +									\
 +	seq_printf(m, "%u\n", queue->batch_##name);			\
 +	return 0;							\
 +}									\
 +									\
-+static int sbq_hctx_qlen_##name##_show(void *data, struct seq_file *m)	\
++static int dss_hctx_qlen_##name##_show(void *data, struct seq_file *m)	\
 +{									\
 +	struct blk_mq_hw_ctx *hctx = data;				\
-+	struct sbq_hctx_queue *queue = hctx->sched_data;		\
++	struct dss_hctx_queue *queue = hctx->sched_data;		\
 +									\
 +	seq_printf(m, "%u\n", queue->qlen_##name);			\
 +	return 0;							\
 +}
-+SBQ_DEBUGFS_SHOW(nr);
-+SBQ_DEBUGFS_SHOW(bytes);
-+#undef SBQ_DEBUGFS_SHOW
++DSS_DEBUGFS_SHOW(nr);
++DSS_DEBUGFS_SHOW(bytes);
++#undef DSS_DEBUGFS_SHOW
 +
-+static int sbq_hctx_state_show(void *data, struct seq_file *m)
++static int dss_hctx_state_show(void *data, struct seq_file *m)
 +{
 +	struct blk_mq_hw_ctx *hctx = data;
-+	struct sbq_hctx_queue *queue = hctx->sched_data;
++	struct dss_hctx_queue *queue = hctx->sched_data;
 +
 +	seq_printf(m, "%d\n", queue->state);
 +	return 0;
 +}
 +
-+#define SBQ_HCTX_QUEUE_ATTR(name)					\
-+	{"batch_" #name, 0400, sbq_hctx_batch_##name##_show},		\
-+	{"qlen_" #name, 0400, sbq_hctx_qlen_##name##_show}
-+static const struct blk_mq_debugfs_attr sbq_hctx_debugfs_attrs[] = {
-+	SBQ_HCTX_QUEUE_ATTR(nr),
-+	SBQ_HCTX_QUEUE_ATTR(bytes),
-+	{"state", 0400, sbq_hctx_state_show},
++#define DSS_HCTX_QUEUE_ATTR(name)					\
++	{"batch_" #name, 0400, dss_hctx_batch_##name##_show},		\
++	{"qlen_" #name, 0400, dss_hctx_qlen_##name##_show}
++static const struct blk_mq_debugfs_attr dss_hctx_debugfs_attrs[] = {
++	DSS_HCTX_QUEUE_ATTR(nr),
++	DSS_HCTX_QUEUE_ATTR(bytes),
++	{"state", 0400, dss_hctx_state_show},
 +	{},
 +};
-+#undef SBQ_HCTX_QUEUE_ATTR
++#undef DSS_HCTX_QUEUE_ATTR
 +#endif
 +
-+static struct elevator_type sbq_sched = {
++static struct elevator_type dss_sched = {
 +	.ops = {
-+		.init_sched = sbq_init_sched,
-+		.exit_sched = sbq_exit_sched,
-+		.init_hctx = sbq_init_hctx,
-+		.exit_hctx = sbq_exit_hctx,
-+		.bio_merge = sbq_hctx_bio_merge,
-+		.insert_requests = sbq_hctx_insert_requests,
-+		.dispatch_request = sbq_hctx_dispatch_request,
-+		.has_work = sbq_hctx_has_work,
++		.init_sched = dss_init_sched,
++		.exit_sched = dss_exit_sched,
++		.init_hctx = dss_init_hctx,
++		.exit_hctx = dss_exit_hctx,
++		.bio_merge = dss_hctx_bio_merge,
++		.insert_requests = dss_hctx_insert_requests,
++		.dispatch_request = dss_hctx_dispatch_request,
++		.has_work = dss_hctx_has_work,
 +	},
 +#ifdef CONFIG_BLK_DEBUG_FS
-+	.hctx_debugfs_attrs = sbq_hctx_debugfs_attrs,
++	.hctx_debugfs_attrs = dss_hctx_debugfs_attrs,
 +#endif
-+	.elevator_attrs = sbq_sched_attrs,
-+	.elevator_name = "sbq",
++	.elevator_attrs = dss_sched_attrs,
++	.elevator_name = "dss",
 +	.elevator_owner = THIS_MODULE,
 +};
 +
-+static int __init sbq_init(void)
++static int __init dss_init(void)
 +{
-+	return elv_register(&sbq_sched);
++	return elv_register(&dss_sched);
 +}
 +
-+static void __exit sbq_exit(void)
++static void __exit dss_exit(void)
 +{
-+	elv_unregister(&sbq_sched);
++	elv_unregister(&dss_sched);
 +}
 +
-+module_init(sbq_init);
-+module_exit(sbq_exit);
++module_init(dss_init);
++module_exit(dss_exit);
 +
 +MODULE_AUTHOR("Jaehyun Hwang");
 +MODULE_LICENSE("GPL");
-+MODULE_DESCRIPTION("sbq I/O scheduler");
++MODULE_DESCRIPTION("dss I/O scheduler");
 -- 
 2.22.0
 

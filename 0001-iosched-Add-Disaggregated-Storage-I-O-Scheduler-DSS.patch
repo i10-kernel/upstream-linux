@@ -8,7 +8,9 @@ Hi All,
 We have several device drivers that benefit from batching requests at blk-mq,
 such as mmc [1] and nvme-tcp [2,3]. Meanwhile, batching dispatch has been also supported
 for I/O schedulers [4]. Thus the only remaining building block for realizing batching
-is an I/O scheduler that enables these enhancements.
+is an I/O scheduler that can efficiently enable these enhancements. Such a scheduler is particularly 
+interesting for disaggregated storage, where the latency of remote disaggregated storage access 
+might be higher than local storage access.
 
 This patch introduces a new I/O scheduler, DSS (Disaggregated Storage Scheduler), which
 performs batching per hctx in terms of #requests, #bytes, and timeouts (at microseconds
@@ -16,17 +18,20 @@ granularity). DSS starts dispatching only when #requests or #bytes is larger tha
 a default threshold or when a timer expires. After that, batching dispatch [3] would
 happen, allowing batching at device drivers along with "bd->last" and ".commit_rqs".
 
+The DSS I/O scheduler builds upon recent work on i10 [6]. 
 We have tested the DSS I/O scheduler with nvme-tcp optimizaitons [2,3] and batching
 dispatch [4], varying number of cores, varying read/write ratios, and varying request
-sizes, with NVMe SSD and RAM block device. DSS shows ~1.6X improvements over "noop"
-I/O scheduler in terms of IOPS with NVMe SSD. All results are available at [5].
-(An early version of the idea is evaluated in [6].)
+sizes, and with NVMe SSD and RAM block device. For NVMe SSDs, the DSS I/O scheduler
+achieves ~60% improvements in terms of IOPS per core over "noop"
+I/O scheduler. These results are available at [5], and many additional results are 
+presented in [6].
 
 We currently use fixed default values as batching thresholds (e.g., 16 for #requests,
-64KB for #bytes, and 50us for timeout based on sensitivity tests [6]), but plan to support
-adaptive batching according to load dynamics. Furthermore, we also plan to extend
-the scheduler to support multi-tenancy to improve both tail latency of latency-
-sensitive applications and throughput of throughput-bound applications as a future work.
+64KB for #bytes, and 50us for timeout). These default values are based on sensitivity 
+tests in [6]. For our future work, we plan to support adaptive batching according to system 
+load and to extend the scheduler to support isolation in multi-tenant deployments (to 
+simultaneously achieve low tail latency for latency-sensitive applications and high throughput 
+for throughput-bound applications).
 
 References
 [1] https://lore.kernel.org/linux-block/cover.1587888520.git.baolin.wang7@gmail.com/T/#mc48a8fb6069843827458f5fea722e1179d32af2a
@@ -114,7 +119,8 @@ index 000000000000..1c02dc6ffdf7
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * The Disaggregated Storage I/O Scheduler (DSS) - supports batching
-+ *      at blk-mq. The main use case is NVMe-over-TCP device driver.
++ *      at blk-mq. The main use case is disaggregated storage access
++ *      using NVMe-over-Fabric (e.g., NVMe-over-TCP device driver).
 + *
 + * An early version of the idea is described and evaluated in
 + * "TCP ≈ RDMA: CPU-efficient Remote Storage Access with i10",
@@ -123,7 +129,6 @@ index 000000000000..1c02dc6ffdf7
 + * Copyright (C) 2020 Cornell University
 + *	Jaehyun Hwang <jaehyun.hwang@cornell.edu>
 + *	Qizhe Cai <qc228@cornell.edu>
-+ *	Ao Tang <atang@cornell.edu>
 + *	Rachit Agarwal <ragarwal@cornell.edu>
 + */
 +
@@ -531,7 +536,7 @@ index 000000000000..1c02dc6ffdf7
 +
 +MODULE_AUTHOR("Jaehyun Hwang");
 +MODULE_LICENSE("GPL");
-+MODULE_DESCRIPTION("dss I/O scheduler");
++MODULE_DESCRIPTION("DSS I/O scheduler");
 -- 
 2.22.0
 

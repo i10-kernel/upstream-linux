@@ -3,6 +3,43 @@ From: Jaehyun Hwang <jaehyun.hwang@cornell.edu>
 Date: Tue, 8 Sep 2020 09:44:20 -0400
 Subject: [PATCH] iosched: Add Disaggregated Storage I/O Scheduler (DSS)
 
+Hi All,
+
+We have several device drivers that benefit from batching requests at blk-mq,
+such as mmc [1] and nvme-tcp [2,3]. Meanwhile, batching dispatch has been also supported
+for I/O schedulers [4]. Thus the only remaining building block for realizing batching
+is an I/O scheduler that can efficiently enable these enhancements. Such a scheduler is
+particularly interesting for disaggregated storage, where the latency of remote
+disaggregated storage access might be higher than local storage access.
+
+This patch introduces a new I/O scheduler, DSS (Disaggregated Storage Scheduler), which
+performs batching per hctx in terms of #requests, #bytes, and timeouts (at microseconds
+granularity). DSS starts dispatching only when #requests or #bytes is larger than
+a default threshold or when a timer expires. After that, batching dispatch [3] would
+happen, allowing batching at device drivers along with "bd->last" and ".commit_rqs".
+
+The DSS I/O scheduler builds upon recent work on i10 [6]. We have tested the DSS I/O
+scheduler with nvme-tcp optimizaitons [2,3] and batching dispatch [4], varying number
+of cores, varying read/write ratios, and varying request sizes, and with NVMe SSD and
+RAM block device. For NVMe SSDs, the DSS I/O scheduler achieves ~60% improvements in
+terms of IOPS per core over "noop" I/O scheduler. These results are available at [5],
+and many additional results are presented in [6].
+
+We currently use fixed default values as batching thresholds (e.g., 16 for #requests,
+64KB for #bytes, and 50us for timeout). These default values are based on sensitivity
+tests in [6]. For our future work, we plan to support adaptive batching according to
+system load and to extend the scheduler to support isolation in multi-tenant deployments
+(to simultaneously achieve low tail latency for latency-sensitive applications and high
+throughput for throughput-bound applications).
+
+References
+[1] https://lore.kernel.org/linux-block/cover.1587888520.git.baolin.wang7@gmail.com/T/#mc48a8fb6069843827458f5fea722e1179d32af2a
+[2] https://git.infradead.org/nvme.git/commit/122e5b9f3d370ae11e1502d14ff5c7ea9b144a76
+[3] https://git.infradead.org/nvme.git/commit/86f0348ace1510d7ac25124b096fb88a6ab45270
+[4] https://lore.kernel.org/linux-block/20200630102501.2238972-1-ming.lei@redhat.com/
+[5] https://github.com/i10-kernel/upstream-linux/blob/master/dss-evaluation.pdf
+[6] https://www.usenix.org/conference/nsdi20/presentation/hwang
+
 Signed-off-by: Jaehyun Hwang <jaehyun.hwang@cornell.edu>
 ---
  Documentation/block/dss-iosched.rst |  22 ++

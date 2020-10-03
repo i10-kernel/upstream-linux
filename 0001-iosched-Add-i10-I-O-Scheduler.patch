@@ -1,6 +1,6 @@
-From 4f3f9b650ffbf397955fee3e08a05319053c65c4 Mon Sep 17 00:00:00 2001
+From 84403a4997f973fb208275c88f34d093a387f71c Mon Sep 17 00:00:00 2001
 From: Jaehyun Hwang <jaehyun.hwang@cornell.edu>
-Date: Fri, 2 Oct 2020 21:38:17 -0400
+Date: Fri, 2 Oct 2020 22:39:51 -0400
 Subject: [PATCH] iosched: Add i10 I/O Scheduler
 
 Hi All,
@@ -44,7 +44,7 @@ References
 [2] https://git.infradead.org/nvme.git/commit/122e5b9f3d370ae11e1502d14ff5c7ea9b144a76
 [3] https://git.infradead.org/nvme.git/commit/86f0348ace1510d7ac25124b096fb88a6ab45270
 [4] https://lore.kernel.org/linux-block/20200630102501.2238972-1-ming.lei@redhat.com/
-[5] https://github.com/i10-kernel/upstream-linux/blob/master/i10-evaluation.pdf
+[5] https://github.com/i10-kernel/upstream-linux/blob/master/dss-evaluation.pdf
 [6] https://www.usenix.org/conference/nsdi20/presentation/hwang
 
 Signed-off-by: Jaehyun Hwang <jaehyun.hwang@cornell.edu>
@@ -122,7 +122,7 @@ index 8d841f5f986f..27e0789589ea 100644
  
 diff --git a/block/i10-iosched.c b/block/i10-iosched.c
 new file mode 100644
-index 000000000000..5ece1438ae3b
+index 000000000000..22699f945015
 --- /dev/null
 +++ b/block/i10-iosched.c
 @@ -0,0 +1,423 @@
@@ -312,7 +312,7 @@ index 000000000000..5ece1438ae3b
 +	bool merged;
 +
 +	spin_lock(&ihq->lock);
-+	merged = blk_mq_bio_list_merge(hctx->ihq, rq_list, bio, nr_segs);
++	merged = blk_mq_bio_list_merge(hctx->queue, rq_list, bio, nr_segs);
 +	spin_unlock(&ihq->lock);
 +
 +	if (merged && bio_data_dir(bio) == WRITE)
@@ -322,12 +322,12 @@ index 000000000000..5ece1438ae3b
 +}
 +
 +/*
-+ * The batch size can be adjusted dynamically on a per-hctx basis. Use per-hctx
-+ * variables in that case.
++ * The batch size can be adjusted dynamically on a per-hctx basis.
++ * Use per-hctx variables in that case.
 + */
 +static inline unsigned int i10_hctx_batch_nr(struct blk_mq_hw_ctx *hctx)
 +{
-+	struct i10_queue_data *iqd = hctx->ihq->elevator->elevator_data;
++	struct i10_queue_data *iqd = hctx->queue->elevator->elevator_data;
 +	struct i10_hctx_queue *ihq = hctx->sched_data;
 +
 +	return ihq->batch_nr ?
@@ -336,7 +336,7 @@ index 000000000000..5ece1438ae3b
 +
 +static inline unsigned int i10_hctx_batch_bytes(struct blk_mq_hw_ctx *hctx)
 +{
-+	struct i10_queue_data *iqd = hctx->ihq->elevator->elevator_data;
++	struct i10_queue_data *iqd = hctx->queue->elevator->elevator_data;
 +	struct i10_hctx_queue *ihq = hctx->sched_data;
 +
 +	return ihq->batch_bytes ?
@@ -345,7 +345,7 @@ index 000000000000..5ece1438ae3b
 +
 +static inline unsigned int i10_hctx_batch_timeout(struct blk_mq_hw_ctx *hctx)
 +{
-+	struct i10_queue_data *iqd = hctx->ihq->elevator->elevator_data;
++	struct i10_queue_data *iqd = hctx->queue->elevator->elevator_data;
 +	struct i10_hctx_queue *ihq = hctx->sched_data;
 +
 +	return ihq->batch_timeout ?
@@ -366,14 +366,14 @@ index 000000000000..5ece1438ae3b
 +	struct i10_hctx_queue *ihq = hctx->sched_data;
 +	struct request *rq, *next;
 +
-+	list_for_each_entry_safe(rq, next, rq_list, ihqlist) {
++	list_for_each_entry_safe(rq, next, rq_list, queuelist) {
 +		struct list_head *head = &ihq->rq_list;
 +
 +		spin_lock(&ihq->lock);
 +		if (at_head)
-+			list_move(&rq->ihqlist, head);
++			list_move(&rq->queuelist, head);
 +		else
-+			list_move_tail(&rq->ihqlist, head);
++			list_move_tail(&rq->queuelist, head);
 +		i10_hctx_insert_update(ihq, rq);
 +		blk_mq_sched_request_inserted(rq);
 +		spin_unlock(&ihq->lock);
@@ -395,9 +395,9 @@ index 000000000000..5ece1438ae3b
 +
 +	spin_lock(&ihq->lock);
 +	rq = list_first_entry_or_null(&ihq->rq_list,
-+				struct request, ihqlist);
++				struct request, queuelist);
 +	if (rq)
-+		list_del_init(&rq->ihqlist);
++		list_del_init(&rq->queuelist);
 +	else
 +		i10_hctx_queue_reset(ihq);
 +	spin_unlock(&ihq->lock);
@@ -435,7 +435,7 @@ index 000000000000..5ece1438ae3b
 +static ssize_t i10_def_batch_##name##_show(struct elevator_queue *e,	\
 +				char *page)				\
 +{									\
-+	struct i10_queue_data *iqd = e->elevator_data;		\
++	struct i10_queue_data *iqd = e->elevator_data;			\
 +									\
 +	return sprintf(page, "%u\n", iqd->def_batch_##name);		\
 +}									\
@@ -443,7 +443,7 @@ index 000000000000..5ece1438ae3b
 +static ssize_t i10_def_batch_##name##_store(struct elevator_queue *e,	\
 +			const char *page, size_t count)			\
 +{									\
-+	struct i10_queue_data *iqd = e->elevator_data;		\
++	struct i10_queue_data *iqd = e->elevator_data;			\
 +	unsigned long long value;					\
 +	int ret;							\
 +									\
@@ -451,7 +451,7 @@ index 000000000000..5ece1438ae3b
 +	if (ret)							\
 +		return ret;						\
 +									\
-+	iqd->def_batch_##name = value;				\
++	iqd->def_batch_##name = value;					\
 +									\
 +	return count;							\
 +}
@@ -475,7 +475,7 @@ index 000000000000..5ece1438ae3b
 +static int i10_hctx_batch_##name##_show(void *data, struct seq_file *m)	\
 +{									\
 +	struct blk_mq_hw_ctx *hctx = data;				\
-+	struct i10_hctx_queue *ihq = hctx->sched_data;		\
++	struct i10_hctx_queue *ihq = hctx->sched_data;			\
 +									\
 +	seq_printf(m, "%u\n", ihq->batch_##name);			\
 +	return 0;							\
@@ -484,7 +484,7 @@ index 000000000000..5ece1438ae3b
 +static int i10_hctx_qlen_##name##_show(void *data, struct seq_file *m)	\
 +{									\
 +	struct blk_mq_hw_ctx *hctx = data;				\
-+	struct i10_hctx_queue *ihq = hctx->sched_data;		\
++	struct i10_hctx_queue *ihq = hctx->sched_data;			\
 +									\
 +	seq_printf(m, "%u\n", ihq->qlen_##name);			\
 +	return 0;							\

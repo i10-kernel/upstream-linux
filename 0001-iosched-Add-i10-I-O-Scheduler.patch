@@ -50,7 +50,7 @@ Signed-off-by: Jaehyun Hwang <jaehyun.hwang@cornell.edu>
 Signed-off-by: Qizhe Cai <qc228@cornell.edu>
 Signed-off-by: Midhul Vuppalapati <mvv25@cornell.edu>
 Signed-off-by: Rachit Agarwal <ragarwal@cornell.edu>
-Signed-off-by: Sagi Grimberg <sagi@grimberg.me>
+Signed-off-by: Sagi Grimberg <sagi@lightbitslabs.com>
 ---
  Documentation/block/i10-iosched.rst |  22 ++
  block/Kconfig.iosched               |   8 +

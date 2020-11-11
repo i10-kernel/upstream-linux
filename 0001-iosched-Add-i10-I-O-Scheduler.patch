@@ -5,14 +5,13 @@ Subject: [PATCH] iosched: Add i10 I/O Scheduler
 
 Hi All,
 
-I/O Batching was proved beneficial for IOPs and throughput optimization in various
-applications historically. There are several block drivers in the kernel that would
-benefit from bactching as well such as mmc [1] and nvme-tcp [2,3]. Meanwhile, batching
-dispatch has been also supported for I/O schedulers [4]. Thus the only remaining
-building block for realizing batching is an I/O scheduler that can efficiently enable
-these enhancements. Such a scheduler is particularly interesting for disaggregated
-storage, where the latency of remote disaggregated storage access might be higher
-than local storage access. Thus amortization of that latency may be needed.
+I/O batching is beneficial for optimizing IOPS and throughput for various
+applications. For instance, several kernel block drivers would
+benefit from batching, including mmc [1] and tcp-based storage drivers like nvme-tcp [2,3]. While we have support for batching
+dispatch [4], we need an I/O scheduler to efficiently enable batching. 
+Such a scheduler is particularly interesting for disaggregated
+storage, where the access latency of remote disaggregated storage may be higher
+than local storage access; thus, batching can significantly help in amortizing the remote access latency while increasing the throughput.
 
 This patch introduces the i10 I/O scheduler, which performs batching per hctx in terms
 of #requests, #bytes, and timeouts (at microseconds granularity). i10 starts

@@ -182,7 +182,7 @@ static bool i10_hctx_bio_merge(struct blk_mq_hw_ctx *hctx, struct bio *bio,
 	bool merged;
 
 	spin_lock(&ihq->lock);
-	merged = blk_mq_bio_list_merge(hctx->queue, rq_list, bio, nr_segs);
+	merged = blk_bio_list_merge(hctx->queue, rq_list, bio, nr_segs);
 	spin_unlock(&ihq->lock);
 
 	if (merged && bio_data_dir(bio) == WRITE)

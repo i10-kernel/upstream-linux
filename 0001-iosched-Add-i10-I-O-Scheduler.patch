@@ -30,7 +30,7 @@ a timer expires. After that, batching dispatch [3] would happen, allowing batchi
 at device drivers along with "bd->last" and ".commit_rqs".
 
 The i10 I/O scheduler builds upon recent work on [6]. We have tested the i10 I/O
-scheduler with nvme-tcp optimizaitons [2,3] and batching dispatch [4], varying number
+scheduler with nvme-tcp optimizations [2,3] and batching dispatch [4], varying number
 of cores, varying read/write ratios, and varying request sizes, and with NVMe SSD and
 RAM block device. For NVMe SSDs, the i10 I/O scheduler achieves ~60% improvements in
 terms of IOPS per core over "noop" I/O scheduler. These results are available at [5],
@@ -97,7 +97,7 @@ index 0000000..86bbfe0
 +at device drivers along with "bd->last" and ".commit_rqs".
 +
 +The i10 I/O scheduler builds upon recent work on [6]. We have tested the i10 I/O
-+scheduler with nvme-tcp optimizaitons [2,3] and batching dispatch [4], varying number
++scheduler with nvme-tcp optimizations [2,3] and batching dispatch [4], varying number
 +of cores, varying read/write ratios, and varying request sizes, and with NVMe SSD and
 +RAM block device. For NVMe SSDs, the i10 I/O scheduler achieves ~60% improvements in
 +terms of IOPS per core over "noop" I/O scheduler. These results are available at [5],

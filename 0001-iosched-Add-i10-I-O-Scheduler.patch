@@ -1,6 +1,15 @@
-From 94689fed72e839725fc07e19f4680c06e54f0553 Mon Sep 17 00:00:00 2001
+From c9490205d79d15445e2a86523407e206084aa00d Mon Sep 17 00:00:00 2001
 From: Rachit Agarwal <ragarwal@cornell.edu>
-Date: Wed, 11 Nov 2020 18:47:10 -0500
+To: Jens Axboe <axboe@kernel.dk>, Christoph Hellwig <hch@lst.de>
+Cc: linux-block@vger.kernel.org, linux-nvme@lists.infradead.org,
+	linux-kernel@vger.kernel.org,
+	Keith Busch <kbusch@kernel.org>, Ming Lei <ming.lei@redhat.com>,
+	Jaehyun Hwang <jaehyun.hwang@cornell.edu>,
+	Qizhe Cai <qc228@cornell.edu>,
+	Midhul Vuppalapati <mvv25@cornell.edu>,
+	Rachit Agarwal <ragarwal@cornell.edu>,
+	Sagi Grimberg <sagi@lightbitslabs.com>
+Date: Thu, 12 Nov 2020 19:27:59 -0500
 Subject: [PATCH] iosched: Add i10 I/O Scheduler
 
 Hi All,
@@ -53,17 +62,17 @@ Signed-off-by: Midhul Vuppalapati <mvv25@cornell.edu>
 Signed-off-by: Rachit Agarwal <ragarwal@cornell.edu>
 Signed-off-by: Sagi Grimberg <sagi@lightbitslabs.com>
 ---
- Documentation/block/i10-iosched.rst |  69 +++++
+ Documentation/block/i10-iosched.rst |  69 ++++++
  block/Kconfig.iosched               |   8 +
  block/Makefile                      |   1 +
- block/i10-iosched.c                 | 421 ++++++++++++++++++++++++++++
+ block/i10-iosched.c                 | 421 ++++++++++++++++++++++++++++++++++++
  4 files changed, 499 insertions(+)
  create mode 100644 Documentation/block/i10-iosched.rst
  create mode 100644 block/i10-iosched.c
 
 diff --git a/Documentation/block/i10-iosched.rst b/Documentation/block/i10-iosched.rst
 new file mode 100644
-index 000000000000..3db7ca3ed4c1
+index 0000000..86bbfe0
 --- /dev/null
 +++ b/Documentation/block/i10-iosched.rst
 @@ -0,0 +1,69 @@
@@ -111,7 +120,7 @@ index 000000000000..3db7ca3ed4c1
 +[2] https://git.infradead.org/nvme.git/commit/122e5b9f3d370ae11e1502d14ff5c7ea9b144a76
 +[3] https://git.infradead.org/nvme.git/commit/86f0348ace1510d7ac25124b096fb88a6ab45270
 +[4] https://lore.kernel.org/linux-block/20200630102501.2238972-1-ming.lei@redhat.com/
-+[5] https://github.com/i10-kernel/upstream-linux/blob/master/dss-evaluation.pdf
++[5] https://github.com/i10-kernel/upstream-linux/blob/master/i10-evaluation.pdf
 +[6] https://www.usenix.org/conference/nsdi20/presentation/hwang
 +
 +==========================
@@ -137,7 +146,7 @@ index 000000000000..3db7ca3ed4c1
 +Timeout value for batching (in microseconds)
 +Default: 50 (us)
 diff --git a/block/Kconfig.iosched b/block/Kconfig.iosched
-index 2f2158e05a91..5b3623b19487 100644
+index 2f2158e..5b3623b 100644
 --- a/block/Kconfig.iosched
 +++ b/block/Kconfig.iosched
 @@ -44,6 +44,14 @@ config BFQ_CGROUP_DEBUG
@@ -156,7 +165,7 @@ index 2f2158e05a91..5b3623b19487 100644
  
  endif
 diff --git a/block/Makefile b/block/Makefile
-index 8d841f5f986f..27e0789589ea 100644
+index 8d841f5..27e0789 100644
 --- a/block/Makefile
 +++ b/block/Makefile
 @@ -21,6 +21,7 @@ obj-$(CONFIG_BLK_CGROUP_IOLATENCY)	+= blk-iolatency.o
@@ -169,7 +178,7 @@ index 8d841f5f986f..27e0789589ea 100644
  
 diff --git a/block/i10-iosched.c b/block/i10-iosched.c
 new file mode 100644
-index 000000000000..b5451beaa66d
+index 0000000..24278e7
 --- /dev/null
 +++ b/block/i10-iosched.c
 @@ -0,0 +1,421 @@
@@ -595,5 +604,5 @@ index 000000000000..b5451beaa66d
 +MODULE_LICENSE("GPLv2");
 +MODULE_DESCRIPTION("i10 I/O scheduler");
 -- 
-2.22.0
+2.7.4
 

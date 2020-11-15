@@ -55,6 +55,7 @@ struct i10_queue_data {
 	unsigned int	def_batch_nr;
 	unsigned int	def_batch_bytes;
 	unsigned int	def_batch_timeout;
+	unsigned int	def_batch_adaptive;
 };
 
 struct i10_hctx_queue {
@@ -86,6 +87,7 @@ static struct i10_queue_data *i10_queue_data_alloc(struct request_queue *q)
 	iqd->def_batch_nr = I10_DEF_BATCH_NR;
 	iqd->def_batch_bytes = I10_DEF_BATCH_BYTES;
 	iqd->def_batch_timeout = I10_DEF_BATCH_TIMEOUT;
+	iqd->def_batch_adaptive = 1;
 
 	return iqd;
 }
@@ -120,6 +122,28 @@ static void i10_exit_sched(struct elevator_queue *e)
 	kfree(iqd);
 }
 
+static void i10_hctx_adaptive_batch_size(struct blk_mq_hw_ctx *hctx,
+		bool timeout)
+{
+	struct i10_queue_data *iqd = hctx->queue->elevator->elevator_data;
+	struct i10_hctx_queue *ihq = hctx->sched_data;
+
+	if (!iqd->def_batch_adaptive) {
+		if (ihq->batch_nr)
+			ihq->batch_nr = 0;
+		return;
+	}
+
+	if (!ihq->batch_nr)
+		ihq->batch_nr = iqd->def_batch_nr;
+
+	if (timeout)
+		ihq->batch_nr = max(ihq->batch_nr >> 1, 1U);
+	else
+		ihq->batch_nr = min(ihq->batch_nr + 1,
+					iqd->def_batch_nr);
+}
+
 enum hrtimer_restart i10_hctx_timeout_handler(struct hrtimer *timer)
 {
 	struct i10_hctx_queue *ihq =
@@ -127,6 +151,7 @@ enum hrtimer_restart i10_hctx_timeout_handler(struct hrtimer *timer)
 			dispatch_timer);
 
 	ihq->state = I10_STATE_DISPATCH;
+	i10_hctx_adaptive_batch_size(ihq->hctx, true);
 	blk_mq_run_hw_queue(ihq->hctx, true);
 
 	return HRTIMER_NORESTART;
@@ -295,6 +320,8 @@ static bool i10_hctx_has_work(struct blk_mq_hw_ctx *hctx)
 			ihq->state = I10_STATE_DISPATCH;
 			if (hrtimer_active(&ihq->dispatch_timer))
 				hrtimer_cancel(&ihq->dispatch_timer);
+
+			i10_hctx_adaptive_batch_size(hctx, false);
 		}
 	}
 
@@ -328,6 +355,7 @@ static ssize_t i10_def_batch_##name##_store(struct elevator_queue *e,	\
 I10_DEF_BATCH_SHOW_STORE(nr);
 I10_DEF_BATCH_SHOW_STORE(bytes);
 I10_DEF_BATCH_SHOW_STORE(timeout);
+I10_DEF_BATCH_SHOW_STORE(adaptive);
 #undef I10_DEF_BATCH_SHOW_STORE
 
 #define I10_SCHED_ATTR(name)	\
@@ -336,6 +364,7 @@ static struct elv_fs_entry i10_sched_attrs[] = {
 	I10_SCHED_ATTR(nr),
 	I10_SCHED_ATTR(bytes),
 	I10_SCHED_ATTR(timeout),
+	I10_SCHED_ATTR(adaptive),
 	__ATTR_NULL
 };
 #undef I10_SCHED_ATTR

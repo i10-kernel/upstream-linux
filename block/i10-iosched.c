@@ -71,6 +71,8 @@ struct i10_hctx_queue {
 	unsigned int	qlen_nr;
 	unsigned int	qlen_bytes;
 
+	unsigned int	active_nr;
+
 	struct hrtimer	dispatch_timer;
 	enum i10_state	state;
 };
@@ -127,6 +129,7 @@ static void i10_hctx_adaptive_batch_size(struct blk_mq_hw_ctx *hctx,
 {
 	struct i10_queue_data *iqd = hctx->queue->elevator->elevator_data;
 	struct i10_hctx_queue *ihq = hctx->sched_data;
+	unsigned int cur_nr = ihq->batch_nr;
 
 	if (!iqd->def_batch_adaptive) {
 		if (ihq->batch_nr)
@@ -139,7 +142,7 @@ static void i10_hctx_adaptive_batch_size(struct blk_mq_hw_ctx *hctx,
 
 	if (timeout)
 		ihq->batch_nr = max(ihq->batch_nr >> 1, 1U);
-	else
+	else if (ihq->batch_nr < ihq->active_nr)
 		ihq->batch_nr = min(ihq->batch_nr + 1,
 					iqd->def_batch_nr);
 }
@@ -179,6 +182,7 @@ static int i10_init_hctx(struct blk_mq_hw_ctx *hctx, unsigned int hctx_idx)
 	ihq->batch_nr = 0;
 	ihq->batch_bytes = 0;
 	ihq->batch_timeout = 0;
+	ihq->active_nr = 0;
 
 	hrtimer_init(&ihq->dispatch_timer,
 		CLOCK_MONOTONIC, HRTIMER_MODE_REL);
@@ -291,13 +295,25 @@ static struct request *i10_hctx_dispatch_request(struct blk_mq_hw_ctx *hctx)
 	spin_lock(&ihq->lock);
 	rq = list_first_entry_or_null(&ihq->rq_list,
 				struct request, queuelist);
-	if (rq)
+	if (rq) {
 		list_del_init(&rq->queuelist);
-	else
+		ihq->active_nr++;
+	}
+	else {
 		i10_hctx_queue_reset(ihq);
+		i10_hctx_adaptive_batch_size(hctx, false);
+	}
 	spin_unlock(&ihq->lock);
 
 	return rq;
+}
+
+static void i10_hctx_completed_request(struct request *rq, u64 now)
+{
+	struct i10_hctx_queue *ihq = rq->mq_hctx->sched_data;
+
+	if (ihq->active_nr)
+		ihq->active_nr--;
 }
 
 static inline bool i10_hctx_dispatch_now(struct blk_mq_hw_ctx *hctx)
@@ -320,8 +336,6 @@ static bool i10_hctx_has_work(struct blk_mq_hw_ctx *hctx)
 			ihq->state = I10_STATE_DISPATCH;
 			if (hrtimer_active(&ihq->dispatch_timer))
 				hrtimer_cancel(&ihq->dispatch_timer);
-
-			i10_hctx_adaptive_batch_size(hctx, false);
 		}
 	}
 
@@ -422,6 +436,7 @@ static struct elevator_type i10_sched = {
 		.bio_merge = i10_hctx_bio_merge,
 		.insert_requests = i10_hctx_insert_requests,
 		.dispatch_request = i10_hctx_dispatch_request,
+		.completed_request = i10_hctx_completed_request,
 		.has_work = i10_hctx_has_work,
 	},
 #ifdef CONFIG_BLK_DEBUG_FS

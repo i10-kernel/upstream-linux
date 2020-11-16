@@ -56,6 +56,7 @@ struct i10_queue_data {
 	unsigned int	def_batch_bytes;
 	unsigned int	def_batch_timeout;
 	unsigned int	def_batch_adaptive;
+	unsigned int	def_batch_printk;
 };
 
 struct i10_hctx_queue {
@@ -90,6 +91,7 @@ static struct i10_queue_data *i10_queue_data_alloc(struct request_queue *q)
 	iqd->def_batch_bytes = I10_DEF_BATCH_BYTES;
 	iqd->def_batch_timeout = I10_DEF_BATCH_TIMEOUT;
 	iqd->def_batch_adaptive = 1;
+	iqd->def_batch_printk = 0;
 
 	return iqd;
 }
@@ -140,11 +142,17 @@ static void i10_hctx_adaptive_batch_size(struct blk_mq_hw_ctx *hctx,
 	if (!ihq->batch_nr)
 		ihq->batch_nr = iqd->def_batch_nr;
 
-	if (timeout)
+	if (timeout) {
 		ihq->batch_nr = max(ihq->batch_nr >> 1, 1U);
+	}
 	else if (ihq->batch_nr < ihq->active_nr)
 		ihq->batch_nr = min(ihq->batch_nr + 1,
 					iqd->def_batch_nr);
+
+	if (iqd->def_batch_printk)
+		printk(KERN_DEBUG "(pid %d cpu %d nice %d) timeout ? %s batch_nr %d -> %d (no.out-reqs %u)",
+			current->pid, current->cpu, task_nice(current), timeout ? "True":"False",
+			cur_nr, ihq->batch_nr, ihq->active_nr);
 }
 
 enum hrtimer_restart i10_hctx_timeout_handler(struct hrtimer *timer)
@@ -370,6 +378,7 @@ I10_DEF_BATCH_SHOW_STORE(nr);
 I10_DEF_BATCH_SHOW_STORE(bytes);
 I10_DEF_BATCH_SHOW_STORE(timeout);
 I10_DEF_BATCH_SHOW_STORE(adaptive);
+I10_DEF_BATCH_SHOW_STORE(printk);
 #undef I10_DEF_BATCH_SHOW_STORE
 
 #define I10_SCHED_ATTR(name)	\
@@ -379,6 +388,7 @@ static struct elv_fs_entry i10_sched_attrs[] = {
 	I10_SCHED_ATTR(bytes),
 	I10_SCHED_ATTR(timeout),
 	I10_SCHED_ATTR(adaptive),
+	I10_SCHED_ATTR(printk),
 	__ATTR_NULL
 };
 #undef I10_SCHED_ATTR

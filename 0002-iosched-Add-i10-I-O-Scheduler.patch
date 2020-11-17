@@ -1,4 +1,4 @@
-From 3d1ca7a0f0ee80f7943013fe6f4bb942dc380ffb Mon Sep 17 00:00:00 2001
+From 91391164307bd621ea741d29a9d83d9ea529bda4 Mon Sep 17 00:00:00 2001
 From: Rachit Agarwal <ragarwal@cornell.edu>
 To: Jens Axboe <axboe@kernel.dk>, Christoph Hellwig <hch@lst.de>
 Cc: linux-block@vger.kernel.org, linux-nvme@lists.infradead.org,
@@ -9,7 +9,7 @@ Cc: linux-block@vger.kernel.org, linux-nvme@lists.infradead.org,
 	Midhul Vuppalapati <mvv25@cornell.edu>,
 	Rachit Agarwal <ragarwal@cornell.edu>,
 	Sagi Grimberg <sagi@lightbitslabs.com>
-Date: Tue, 17 Nov 2020 13:57:14 -0500
+Date: Tue, 17 Nov 2020 14:15:58 -0500
 Subject: [PATCH v2] iosched: Add i10 I/O Scheduler
 
 Hi All,
@@ -57,9 +57,9 @@ References
 [6] https://www.usenix.org/conference/nsdi20/presentation/hwang
 
 v2:
-        - rebase on the branches for 5.11
-        - add an adaptive mode for adjusting batch-size according to workloads
-        - update the link of the evaluation report [5]
+	- rebase on the branches for 5.11
+	- add an adaptive mode for adjusting batch-size according to workloads
+	- update the link of the evaluation report [5]
 
 Signed-off-by: Jaehyun Hwang <jaehyun.hwang@cornell.edu>
 Signed-off-by: Qizhe Cai <qc228@cornell.edu>
@@ -188,7 +188,7 @@ index 8d841f5..27e0789 100644
  
 diff --git a/block/i10-iosched.c b/block/i10-iosched.c
 new file mode 100644
-index 0000000..5a51046
+index 0000000..f14ae3fc
 --- /dev/null
 +++ b/block/i10-iosched.c
 @@ -0,0 +1,471 @@
@@ -533,9 +533,9 @@ index 0000000..5a51046
 +	if (ihq->state == I10_STATE_BATCH) {
 +		if (i10_hctx_dispatch_now(hctx)) {
 +			ihq->state = I10_STATE_DISPATCH;
++			ihq->timeout_count = 0;
 +			if (hrtimer_active(&ihq->dispatch_timer))
 +				hrtimer_cancel(&ihq->dispatch_timer);
-+			ihq->timeout_count = 0;
 +		}
 +	}
 +

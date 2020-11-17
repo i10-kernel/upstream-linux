@@ -56,7 +56,6 @@ struct i10_queue_data {
 	unsigned int	def_batch_bytes;
 	unsigned int	def_batch_timeout;
 	unsigned int	def_batch_adaptive;
-	unsigned int	def_batch_printk;
 };
 
 struct i10_hctx_queue {
@@ -73,6 +72,7 @@ struct i10_hctx_queue {
 	unsigned int	qlen_bytes;
 
 	unsigned int	active_nr;
+	int		timeout_count;
 
 	struct hrtimer	dispatch_timer;
 	enum i10_state	state;
@@ -91,7 +91,6 @@ static struct i10_queue_data *i10_queue_data_alloc(struct request_queue *q)
 	iqd->def_batch_bytes = I10_DEF_BATCH_BYTES;
 	iqd->def_batch_timeout = I10_DEF_BATCH_TIMEOUT;
 	iqd->def_batch_adaptive = 1;
-	iqd->def_batch_printk = 0;
 
 	return iqd;
 }
@@ -142,17 +141,13 @@ static void i10_hctx_adaptive_batch_size(struct blk_mq_hw_ctx *hctx,
 	if (!ihq->batch_nr)
 		ihq->batch_nr = iqd->def_batch_nr;
 
-	if (timeout) {
+	if (timeout && ihq->timeout_count > 1) {
 		ihq->batch_nr = max(ihq->batch_nr >> 1, 1U);
+		ihq->timeout_count = 0;
 	}
-	else if (ihq->batch_nr < ihq->active_nr)
+	else if (!timeout && ihq->batch_nr < ihq->active_nr)
 		ihq->batch_nr = min(ihq->batch_nr + 1,
 					iqd->def_batch_nr);
-
-	if (iqd->def_batch_printk)
-		printk(KERN_DEBUG "(pid %d cpu %d nice %d) timeout ? %s batch_nr %d -> %d (no.out-reqs %u)",
-			current->pid, current->cpu, task_nice(current), timeout ? "True":"False",
-			cur_nr, ihq->batch_nr, ihq->active_nr);
 }
 
 enum hrtimer_restart i10_hctx_timeout_handler(struct hrtimer *timer)
@@ -162,6 +157,7 @@ enum hrtimer_restart i10_hctx_timeout_handler(struct hrtimer *timer)
 			dispatch_timer);
 
 	ihq->state = I10_STATE_DISPATCH;
+	ihq->timeout_count++;
 	i10_hctx_adaptive_batch_size(ihq->hctx, true);
 	blk_mq_run_hw_queue(ihq->hctx, true);
 
@@ -191,6 +187,7 @@ static int i10_init_hctx(struct blk_mq_hw_ctx *hctx, unsigned int hctx_idx)
 	ihq->batch_bytes = 0;
 	ihq->batch_timeout = 0;
 	ihq->active_nr = 0;
+	ihq->timeout_count = 0;
 
 	hrtimer_init(&ihq->dispatch_timer,
 		CLOCK_MONOTONIC, HRTIMER_MODE_REL);
@@ -344,6 +341,7 @@ static bool i10_hctx_has_work(struct blk_mq_hw_ctx *hctx)
 			ihq->state = I10_STATE_DISPATCH;
 			if (hrtimer_active(&ihq->dispatch_timer))
 				hrtimer_cancel(&ihq->dispatch_timer);
+			ihq->timeout_count = 0;
 		}
 	}
 

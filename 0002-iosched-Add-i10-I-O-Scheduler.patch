@@ -1,4 +1,4 @@
-From 91391164307bd621ea741d29a9d83d9ea529bda4 Mon Sep 17 00:00:00 2001
+From 4fc56e1511158174abf2db3073e378d3d7e3e9f5 Mon Sep 17 00:00:00 2001
 From: Rachit Agarwal <ragarwal@cornell.edu>
 To: Jens Axboe <axboe@kernel.dk>, Christoph Hellwig <hch@lst.de>
 Cc: linux-block@vger.kernel.org, linux-nvme@lists.infradead.org,
@@ -9,7 +9,7 @@ Cc: linux-block@vger.kernel.org, linux-nvme@lists.infradead.org,
 	Midhul Vuppalapati <mvv25@cornell.edu>,
 	Rachit Agarwal <ragarwal@cornell.edu>,
 	Sagi Grimberg <sagi@lightbitslabs.com>
-Date: Tue, 17 Nov 2020 14:15:58 -0500
+Date: Sat, 28 Nov 2020 01:41:05 -0500
 Subject: [PATCH v2] iosched: Add i10 I/O Scheduler
 
 Hi All,
@@ -19,9 +19,9 @@ applications. For instance, several kernel block drivers would benefit from
 batching, including mmc [1] and tcp-based storage drivers like nvme-tcp [2,3].
 While we have support for batching dispatch [4], we need an I/O scheduler to
 efficiently enable batching. Such a scheduler is particularly interesting for
-disaggregated (remote) storage, where the access latency of remote disaggregated storage
-may be higher than local storage access; thus, batching can significantly help
-in amortizing the remote access latency while increasing the throughput.
+disaggregated (remote) storage, where the access latency of disaggregated remote
+storage may be higher than local storage access; thus, batching can significantly
+help in amortizing the remote access latency while increasing the throughput.
 
 This patch introduces the i10 I/O scheduler, which performs batching per hctx in
 terms of #requests, #bytes, and timeouts (at microseconds granularity). i10 starts
@@ -33,9 +33,8 @@ The i10 I/O scheduler builds upon recent work on [6]. We have tested the i10 I/O
 scheduler with nvme-tcp optimizaitons [2,3] and batching dispatch [4], varying number
 of cores, varying read/write ratios, and varying request sizes, and with NVMe SSD and
 RAM block device. For remote NVMe SSDs, the i10 I/O scheduler achieves ~60% improvements
-in terms of IOPS per core over "noop" I/O scheduler, while trading off latency at lower loads. 
-These results are available at [5],
-and many additional results are presented in [6].
+in terms of IOPS per core over "noop" I/O scheduler, while trading off latency at lower loads.
+These results are available at [5], and many additional results are presented in [6].
 
 While other schedulers may also batch I/O (e.g., mq-deadline), the optimization target
 in the i10 I/O scheduler is throughput maximization. Hence there is no latency target
@@ -44,11 +43,11 @@ to build this functionality to an existing scheduler.
 
 We have default values for batching thresholds (e.g., 16 for #requests, 64KB for #bytes,
 and 50us for timeout). These default values are based on sensitivity tests in [6].
-For many workloads, especially those with low loads, the default values of i10 scheduler 
+For many workloads, especially those with low loads, the default values of i10 scheduler
 may not provide the optimal operating point on the latency-throughput curve. To that end,
-the scheduler adaptively sets the batch size depending on number of outstanding requests 
+the scheduler adaptively sets the batch size depending on number of outstanding requests
 and the triggering of timeouts, as measured in the block layer. Much work needs to be done
-to design better adaptation algorithms, especially when the loads are neither too high 
+to design better adaptation algorithms, especially when the loads are neither too high
 nor too low. This constitutes interesting future work. In addition, for our future work, we
 plan to extend the scheduler to support isolation in multi-tenant
 deployments (to simultaneously achieve low tail latency for latency-sensitive applications
@@ -63,7 +62,7 @@ References
 [6] https://www.usenix.org/conference/nsdi20/presentation/hwang
 
 v2:
-	- rebase on the branches for 5.11
+	- rebase it onto the master branch
 	- add an adaptive mode for adjusting batch-size according to workloads
 	- update the link of the evaluation report [5]
 
@@ -73,20 +72,20 @@ Signed-off-by: Midhul Vuppalapati <mvv25@cornell.edu>
 Signed-off-by: Rachit Agarwal <ragarwal@cornell.edu>
 Signed-off-by: Sagi Grimberg <sagi@lightbitslabs.com>
 ---
- Documentation/block/i10-iosched.rst |  74 ++++++
+ Documentation/block/i10-iosched.rst |  79 ++++++
  block/Kconfig.iosched               |   8 +
  block/Makefile                      |   1 +
  block/i10-iosched.c                 | 471 ++++++++++++++++++++++++++++++++++++
- 4 files changed, 554 insertions(+)
+ 4 files changed, 559 insertions(+)
  create mode 100644 Documentation/block/i10-iosched.rst
  create mode 100644 block/i10-iosched.c
 
 diff --git a/Documentation/block/i10-iosched.rst b/Documentation/block/i10-iosched.rst
 new file mode 100644
-index 0000000..dfc244b
+index 0000000..661b5d5
 --- /dev/null
 +++ b/Documentation/block/i10-iosched.rst
-@@ -0,0 +1,74 @@
+@@ -0,0 +1,79 @@
 +==========================
 +i10 I/O scheduler overview
 +==========================
@@ -96,9 +95,9 @@ index 0000000..dfc244b
 +batching, including mmc [1] and tcp-based storage drivers like nvme-tcp [2,3].
 +While we have support for batching dispatch [4], we need an I/O scheduler to
 +efficiently enable batching. Such a scheduler is particularly interesting for
-+disaggregated storage, where the access latency of remote disaggregated storage
-+may be higher than local storage access; thus, batching can significantly help
-+in amortizing the remote access latency while increasing the throughput.
++disaggregated (remote) storage, where the access latency of disaggregated remote
++storage may be higher than local storage access; thus, batching can significantly
++help in amortizing the remote access latency while increasing the throughput.
 +
 +This patch introduces the i10 I/O scheduler, which performs batching per hctx in
 +terms of #requests, #bytes, and timeouts (at microseconds granularity). i10 starts
@@ -110,8 +109,8 @@ index 0000000..dfc244b
 +scheduler with nvme-tcp optimizaitons [2,3] and batching dispatch [4], varying number
 +of cores, varying read/write ratios, and varying request sizes, and with NVMe SSD and
 +RAM block device. For remote NVMe SSDs, the i10 I/O scheduler achieves ~60% improvements
-+in terms of IOPS per core over "noop" I/O scheduler. These results are available at [5],
-+and many additional results are presented in [6].
++in terms of IOPS per core over "noop" I/O scheduler, while trading off latency at lower loads.
++These results are available at [5], and many additional results are presented in [6].
 +
 +While other schedulers may also batch I/O (e.g., mq-deadline), the optimization target
 +in the i10 I/O scheduler is throughput maximization. Hence there is no latency target
@@ -120,10 +119,15 @@ index 0000000..dfc244b
 +
 +We have default values for batching thresholds (e.g., 16 for #requests, 64KB for #bytes,
 +and 50us for timeout). These default values are based on sensitivity tests in [6].
-+If the adaptive mode is enabled, the batch size can be adjusted according to workloads.
-+For our future work, we plan to extend the scheduler to support isolation in multi-tenant
-+deployments (to simultaneously achieve low tail latency for latency-sensitive applications
-+and high throughput for throughput-bound applications).
++For many workloads, especially those with low loads, the default values of i10 scheduler
++may not provide the optimal operating point on the latency-throughput curve. To that end,
++the scheduler adaptively sets the batch size depending on number of outstanding requests
++and the triggering of timeouts, as measured in the block layer. Much work needs to be done
++to design better adaptation algorithms, especially when the loads are neither too high
++nor too low. This constitutes interesting future work. In addition, for our future work, we
++plan to extend the scheduler to support isolation in multi-tenant deployments
++(to simultaneously achieve low tail latency for latency-sensitive applications and high
++throughput for throughput-bound applications).
 +
 +References
 +[1] https://lore.kernel.org/linux-block/cover.1587888520.git.baolin.wang7@gmail.com/T/#mc48a8fb6069843827458f5fea722e1179d32af2a

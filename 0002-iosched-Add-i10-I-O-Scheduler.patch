@@ -8,7 +8,9 @@ Cc: linux-block@vger.kernel.org, linux-nvme@lists.infradead.org,
 	Qizhe Cai <qc228@cornell.edu>,
 	Midhul Vuppalapati <mvv25@cornell.edu>,
 	Rachit Agarwal <ragarwal@cornell.edu>,
-	Sagi Grimberg <sagi@lightbitslabs.com>
+	Sagi Grimberg <sagi@lightbitslabs.com>,
+	Shrijeet Mukherjee <shrijeet@gmail.com>,
+	David Ahern <dsahern@gmail.com>
 Date: Sat, 28 Nov 2020 01:41:05 -0500
 Subject: [PATCH v2] iosched: Add i10 I/O Scheduler
 
